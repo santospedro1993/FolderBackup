@@ -52,6 +52,20 @@ func gatherFiles(path string) ([]filesData, error) {
 	return files, err
 }
 
+func createIfNotExist(dir string) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		errDir := os.MkdirAll(dir, 0755)
+		if errDir != nil {
+			log.Println("Error creating directory", errDir)
+			os.Exit(1)
+		}
+	}
+}
+
+func moveToTrash(src, dest string) error {
+	return os.Rename(src, dest)
+}
+
 func copyFile(src, dest string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -67,20 +81,6 @@ func copyFile(src, dest string) error {
 	return err
 }
 
-func createIfNotExist(dir string) {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		errDir := os.MkdirAll(dir, 0755)
-		if errDir != nil {
-			log.Println("Error creating directory", errDir)
-			os.Exit(1)
-		}
-	}
-}
-
-func moveToTrash(src, dest string) error {
-	return os.Rename(src, dest)
-}
-
 func main() {
 	// Create new ticker which ticks every 5 minutes
 	ticker := time.NewTicker(5 * time.Minute)
@@ -91,7 +91,7 @@ func main() {
 
 	for {
 		select {
-		// this case statement is run whenever the ticker ticks (every 5 minutes)
+		// This case statement is run whenever the ticker ticks (every 5 minutes)
 		case <-ticker.C:
 			process()
 		}
@@ -103,10 +103,23 @@ func process() {
 	data, err := os.ReadFile("./path.json")
 	if err != nil {
 		log.Fatal("Failed reading path.json: ", err)
+		return
 	}
+
 	var config pathsConfig
 	if err = json.Unmarshal(data, &config); err != nil {
 		log.Fatal("Failed parsing path.json: ", err)
+		return
+	}
+
+	if _, err := os.Stat(config.InputPath); os.IsNotExist(err) {
+		log.Printf("Warning: Input folder does not exist: %s\n", config.InputPath)
+		return
+	}
+
+	if _, err := os.Stat(config.OutputPath); os.IsNotExist(err) {
+		log.Printf("Warning: Output folder does not exist: %s\n", config.OutputPath)
+		return
 	}
 
 	createIfNotExist(config.OutputPath)
@@ -116,10 +129,13 @@ func process() {
 	filesInInputPath, err := gatherFiles(config.InputPath)
 	if err != nil {
 		log.Fatal("Unable to gather files from input path: ", err)
+		return
 	}
+
 	filesInOutputPath, err := gatherFiles(config.OutputPath)
 	if err != nil {
 		log.Fatal("Unable to gather files from output path: ", err)
+		return
 	}
 
 	inFilesMap := make(map[string]filesData)
@@ -163,7 +179,7 @@ func process() {
 
 		if output, exists := outFilesMap[relativePath]; exists {
 			// If file exists in output directory, only replace if the input file is newer
-			if output.ModTime.After(input.ModTime) {
+			if output.ModTime.Before(input.ModTime) {
 				continue
 			}
 		}
